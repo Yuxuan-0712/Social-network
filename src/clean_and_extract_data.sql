@@ -7,7 +7,7 @@ CREATE TABLE stage_table(
 
 
 -- In psql: 
-\copy edges_stage FROM '/path/to/10kdata_size.csv' WITH (FORMAT csv, HEADER false);
+\copy stage_table FROM '/path/to/10kdata_size.csv' WITH (FORMAT csv, HEADER false);
 
 CREATE TABLE edges_table(
   timestamp BIGINT,
@@ -17,57 +17,72 @@ CREATE TABLE edges_table(
 INSERT INTO edges_table(
   timestamp, source, target
 )
-
+SELECT DISTINCT ON (tgt,src)
+  tsp::BIGINT,
+  tgt::BIGINT,
+  src::BIGINT
+FROM stage_table ORDER BY tsp,src,tgt::BIGINT DESC
 
 # create the birth_size column
 ALTER TABLE edges_table ADD COLUMN "size" INTEGER;
-UPDATE edges_table
-SET size = result.size
-FROM(
-  SELECT tgt,
-  src,
-  tsp,
-  COUNT(DISTINCT node) OVER (ORDER BY tgt,src,tsp ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS size
-  FROM (
-  SELECT tgt,
-  src,
-  tsp
-  FROM edges_table
-  ORDER BY tgt, src, tsp
-  ) AS edge
-  CROSS JOIN LATERAL 
-  (SELECT src AS node UNION ALL SELECT tgt) AS nodes
-) AS results
-WHERE edges_table.tgt = results.tgt
-AND edges_table.src = results.src
-AND edges_table.tsp = results.tsp
+WITH first_apperance AS (
+SELECT node, MIN(ts) AS first_ts
+FROM (
+SELECT target as node, timestamp as ts
+FROM edges_table
+UNION ALL 
+SELECT source as node, timestamp as ts
+FROM edges_table
+) x
+GROUP BY node
+),
+edges_size AS (
+SELECT e.target, e.source, e.timestamp, 
+(SELECT COUNT(*) from first_apperance fa 
+WHERE fa.first_ts <= e.timestamp) AS size
+FROM edges_table e
+)
+UPDATE edges_table e
+SET size = ed.size
+FROM edges_size ed
+WHERE e.target = ed.target
+AND e.source = ed.source
+AND e.timestamp = ed.timestamp;
 
+-- Create node properties table
 CREATE TABLE node_property AS
 WITH outdeg AS (
-  SELECT source AS node, COUNT(*) AS outdegree
-  FROM edges_table
-  GROUP BY source
+SELECT source AS node, COUNT(*) AS outdegree
+FROM edges_table
+GROUP BY source
 ),
 indeg AS (
-  SELECT target AS node, COUNT(*) AS indegree
-  FROM edges_table
-  GROUP BY target
-)
-birth_size AS (
-  SELECT src AS node, MIN(size) AS birth_size
-  FROM edges_table
-  GROUP BY src
-  
-  UNION ALL
-  
-  SELECT tgt AS node, MIN(size) AS birth_size
-  FROM edges_table
-  GROUP BY tgt
+SELECT target AS node, COUNT(*) AS indegree
+FROM edges_table
+GROUP BY target
+),
+first_timestamp AS (
+SELECT node, MIN(ts) AS fs
+FROM (
+SELECT source AS node, timestamp AS ts FROM edges_table
+UNION ALL 
+SELECT target AS node, timestamp AS ts FROM edges_table
+) x
+GROUP BY node
+),
+node_size AS (
+SELECT ft.node, e.size AS birth_size
+FROM first_timestamp ft
+JOIN edges_table e
+ON (ft.node = e.target OR ft.node = e.source)
+AND ft.fs = e.timestamp
+GROUP BY f.node
 )
 SELECT 
-  COALESCE (i.node, o.node) AS node,
-  COALESCE (i.indegree, 0) AS indegree,
-  COALESCE (o.outdegree,0) AS outdegree
-FROM outdeg o
-FULL OUTER JOIN indeg i
-ON o.node = i.node,
+COALESCE (i.node, o.node) AS node,
+COALESCE (i.indegree,0) AS indegree,
+COALESCE (o.outdegree,0) AS outdegree,
+COALESCE (s.birth_size,0) AS birth_size
+FROM indeg i
+FULL OUTER JOIN oudteg o ON i.node = o.node
+FULL OUTER JOIN node_size s ON COALESCE (i.node, o.node) = s.node
