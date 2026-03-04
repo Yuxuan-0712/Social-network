@@ -19,11 +19,11 @@ INSERT INTO edges_table(
 )
 SELECT DISTINCT ON (tgt,src)
   tsp::BIGINT,
-  tgt::BIGINT,
-  src::BIGINT
-FROM stage_table ORDER BY tsp,src,tgt::BIGINT DESC
+  src::BIGINT,
+  tgt::BIGINT
+FROM stage_table ORDER BY tgt,src,tsp::BIGINT DESC;
 
-# create the birth_size column
+--create the birth_size column
 ALTER TABLE edges_table ADD COLUMN "size" INTEGER;
 WITH first_apperance AS (
 SELECT node, MIN(ts) AS first_ts
@@ -71,18 +71,15 @@ SELECT target AS node, timestamp AS ts FROM edges_table
 GROUP BY node
 ),
 node_size AS (
-SELECT ft.node, e.size AS birth_size
+SELECT ft.node, COUNT(*) OVER (ORDER BY fs ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS birth_size
 FROM first_timestamp ft
-JOIN edges_table e
-ON (ft.node = e.target OR ft.node = e.source)
-AND ft.fs = e.timestamp
-GROUP BY f.node
 )
+ 
 SELECT 
 COALESCE (i.node, o.node) AS node,
 COALESCE (i.indegree,0) AS indegree,
 COALESCE (o.outdegree,0) AS outdegree,
 COALESCE (s.birth_size,0) AS birth_size
 FROM indeg i
-FULL OUTER JOIN oudteg o ON i.node = o.node
-FULL OUTER JOIN node_size s ON COALESCE (i.node, o.node) = s.node
+FULL OUTER JOIN outdeg o ON i.node = o.node
+FULL OUTER JOIN node_size s ON COALESCE (i.node, o.node) = s.node;
