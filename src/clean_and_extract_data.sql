@@ -83,3 +83,10 @@ COALESCE (s.birth_size,0) AS birth_size
 FROM indeg i
 FULL OUTER JOIN outdeg o ON i.node = o.node
 FULL OUTER JOIN node_size s ON COALESCE (i.node, o.node) = s.node;
+
+\copy (SELECT target, source, timestamp, size FROM edges_table ORDER BY timestamp)
+TO "\path\to\edges_table.csv"
+WITH (FORMAT csv,HEADER true);
+\copy (SELECT node, indegree, outdegree, birth_size FROM node_property ORDER BY birth_size)
+TO "\path\to\node_property.csv"
+WITH (FORMAT csv, HEADER true)
