@@ -1,4 +1,4 @@
-
+#Find the SU nodes
 def window_stats(edges, s0, s1, target_col="target_fid", size_col="size"):
     edges = edges[[target_col, size_col]].copy()
 
@@ -45,14 +45,15 @@ def extract_persistent_top_nodes(edges, s_min=0, s_max=5000, n_windows=10,
     persistent = summary[summary["n_windows"] >= min_windows].copy()
     persistent["windows"] = persistent["target_fid"].map(hit_windows)
 
-    persistent_nodes = persistent["target_fid"].tolist()
+    persistent_nodes = persistent["target_fid"]
     return persistent_nodes, persistent, summary, cuts
 persistent_nodes, persistent_df, all_counts_df, cuts = extract_persistent_top_nodes(
-    df,                # 你的 edges 表
+    df,               
     s_min=0, s_max=5000,
     n_windows=10,
-    q=0.95,            # 你刚刚用的 top1%
+    q=0.95,           
     min_windows=7,
     target_col="target_fid",
     size_col="size"
 )
+persistent_nodes.to_csv("\to\path\su.csv")
